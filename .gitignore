@@ -75,8 +75,8 @@ logs/
 .DS_Store
 
 # 数据文件（根据需要调整）
-data/*.json
-data/*.csv
+# data/*.json  # 注释掉，允许上传data目录中的json文件
+# data/*.csv   # 注释掉，允许上传data目录中的csv文件
 !data/.gitkeep
 
 # Docker
