@@ -6,6 +6,15 @@ import logging
 
 from app.core import config
 
+# --- 缓存管理 ---
+
+def clear_caches():
+    """清除所有缓存，用于开发和调试"""
+    get_embedding_client.cache_clear()
+    get_chroma_collection.cache_clear()
+    get_knowledge_base.cache_clear()
+    logging.info("已清除所有缓存")
+
 # --- 客户端初始化 ---
 
 @lru_cache(maxsize=1)
@@ -68,31 +77,41 @@ def find_node_by_path(path_id: str):
     Returns:
         dict: 找到的节点对象，如果未找到则返回None。
     """
+    logging.debug(f"开始查找路径: {path_id}")
     path_parts = path_id.split('>')
     current_level = get_knowledge_base()
+    found_node = None
     
-    for part in path_parts:
+    # 添加调试信息：根节点情况
+    root_names = [node.get('name', 'Unknown') for node in current_level]
+    logging.debug(f"根节点列表: {root_names}")
+    
+    for i, part in enumerate(path_parts):
         found_node = None
+        logging.debug(f"查找第{i+1}层节点: '{part}', 当前层级有{len(current_level)}个节点")
+        
         # 在当前层级的节点中查找匹配的name
+        current_names = [node.get('name', 'Unknown') for node in current_level]
+        logging.debug(f"第{i+1}层节点名称列表: {current_names}")
+        
         for node in current_level:
             if node.get('name') == part:
                 found_node = node
+                logging.debug(f"找到匹配节点: '{part}'")
                 # 如果不是最后一个部分，就进入下一层child
-                if part != path_parts[-1]:
+                if i < len(path_parts) - 1:
                     current_level = node.get('child', [])
+                    logging.debug(f"进入下一层，子节点数量: {len(current_level)}")
                 break
         
         if found_node is None:
-            logging.warning(f"路径 '{path_id}' 在 '{part}' 部分中断，未找到节点。")
+            logging.warning(f"路径 '{path_id}' 在第{i+1}层 '{part}' 部分中断，未找到节点。当前层级节点: {current_names}")
             return None
             
     # 循环结束后，found_node 应该是目标节点
-    # 但我们需要确认它是否是路径的终点
-    if found_node and found_node.get('name') == path_parts[-1]:
-        return found_node
-    else:
-        logging.error(f"路径 '{path_id}' 解析逻辑出现意外错误。")
-        return None
+    if found_node:
+        logging.debug(f"成功找到目标节点: '{found_node.get('name')}'")
+    return found_node
 
 def get_context_from_retrieval(query: str):
     """
