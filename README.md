@@ -1,165 +1,372 @@
-# JsonTreeRAG: 基于本地私有知识库的RAG问答系统
+# JsonTreeRAG 🌳
 
-本项目是一个基于私有知识库的检索增强生成（RAG）问答系统。它专门为层级化的JSON格式知识库设计，通过向量化检索与上下文子树提取，为本地大语言模型（LLM）提供精准的背景知识，从而生成高质量的回答。
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python Version](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Docker](https://img.shields.io/badge/Docker-Supported-blue.svg)](https://www.docker.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.68%2B-009688.svg)](https://fastapi.tiangolo.com/)
+[![Stars](https://img.shields.io/github/stars/oidahdsah0/JsonTreeRAG?style=social)](https://github.com/oidahdsah0/JsonTreeRAG/stargazers)
 
-所有服务组件均支持本地化部署，API设计与OpenAI标准兼容，方便与现有工具链集成。
+> 🚀 **A JSON-based Tree RAG (Retrieval-Augmented Generation) system for private knowledge base Q&A**
 
-## 核心特性
+基于本地私有知识库的RAG问答系统，专为层级化JSON格式知识库设计，通过向量化检索与上下文子树提取，为本地大语言模型提供精准的背景知识。
 
-- **私有化部署**: 所有组件（Embedding服务, LLM服务, RAG应用）均可在本地环境部署，确保数据安全与私密性。
-- **层级知识库支持**: 专为树状结构的JSON知识库优化，通过唯一的路径ID实现精准的上下文节点定位与检索。
-- **OpenAI兼容API**: 提供与OpenAI完全兼容的 `/v1/chat/completions` 端点，支持流式响应（Server-Sent Events），可无缝对接各类标准客户端或SDK。
-- **容器化部署**: 提供 `Dockerfile` 和 `docker-compose.yml`，使用 Docker 实现一键构建、配置和启动，极大简化了部署流程。
-- **高度可配置**: 通过 `.env` 文件集中管理所有外部服务（Embedding, LLM）的地址、API密钥和模型名称，轻松切换配置。
+[English](#english-version) | [中文文档](#中文文档)
 
-## 程序架构
+## ✨ 核心特性
 
-系统由数据层、服务层和应用层组成，通过容器化技术进行解耦和管理。
+🔒 **私有化部署** - 所有组件均可本地部署，确保数据安全  
+🌳 **层级知识库** - 专为树状JSON结构优化，支持精准路径定位  
+🔌 **OpenAI兼容** - 标准API接口，支持流式响应  
+🐳 **容器化部署** - Docker一键启动，简化部署流程  
+⚙️ **高度可配置** - 灵活的配置管理，支持多种LLM服务  
 
-![程序架构图](https://i.imgur.com/your-architecture-diagram.png)  <!-- 您可以后续替换为真实的架构图 -->
+## 🚀 快速开始
 
-### 组件说明
+### 一键启动
 
-1.  **`data/`**: 存放原始知识库文件 `combined_output.json`。
-2.  **`db/chromadb/`**: ChromaDB 向量数据库的持久化存储目录。通过Docker卷挂载，确保数据在容器重启后不丢失。
-3.  **`app/`**: FastAPI 应用核心代码。
-    -   **`main.py`**: API 入口。定义 `/v1/chat/completions` 端点，处理HTTP请求和SSE流式响应。
-    -   **`services/retrieval.py`**: 检索模块。负责接收用户问题，调用Embedding服务生成向量，在ChromaDB中进行相似度搜索，并根据命中的路径ID提取知识库子树作为上下文。
-    -   **`services/llm_handler.py`**: LLM处理模块。负责构建最终的Prompt（包含检索到的上下文和用户问题），调用本地vLLM服务，并以流式方式返回结果。
-    -   **`core/config.py`**: 配置模块。从环境变量 (`.env`) 中加载所有服务地址、API密钥和模型名称。
-4.  **`scripts/data_indexer.py`**: 数据索引脚本。用于一次性读取知识库JSON，遍历所有节点，调用Embedding服务生成向量，并将其与节点的元数据一同存入ChromaDB。
-5.  **`Dockerfile` & `docker-compose.yml`**: 容器化配置文件，定义了如何构建镜像和编排服务。
-6.  **`.env`**: 环境变量配置文件，用于存储敏感信息和环境特定的配置。
+```bash
+# 1. 克隆项目
+git clone https://github.com/oidahdsah0/JsonTreeRAG.git
+cd JsonTreeRAG
 
-### 请求流程
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，配置你的API端点和密钥
 
-`用户查询` -> `FastAPI (main.py)` -> `检索服务 (retrieval.py)` -> `Embedding服务` & `ChromaDB` -> `上下文子树` -> `LLM处理器 (llm_handler.py)` -> `vLLM服务` -> `流式响应` -> `用户`
+# 3. 启动服务
+docker-compose up -d
 
-## 启动方式
+# 4. 索引知识库
+docker-compose run --rm app python scripts/data_indexer.py
+```
 
-请按照以下步骤在您的环境中启动并运行本系统。
+### 测试API
 
-### 步骤 1: 环境准备
-
-- 确保您的机器上已安装 [Docker](https://www.docker.com/) 和 [Docker Compose](https://docs.docker.com/compose/install/)。
-- 将本项目代码克隆到本地。
-
-### 步骤 2: 配置环境变量
-
-1.  在项目根目录下，将 `.env.example` 文件复制并重命名为 `.env`。
-2.  打开 `.env` 文件，根据您的本地服务实际情况，修改以下配置：
-    - `EMBEDDING_API_BASE_URL`: 您的本地Embedding服务的地址。
-    - `EMBEDDING_API_KEY`: Embedding服务的API Key (如果需要)。
-    - `EMBEDDING_MODEL`: Embedding模型名称。
-    - `LLM_API_BASE_URL`: 您的本地vLLM服务的地址。
-    - `LLM_API_KEY`: vLLM服务的API Key (如果需要)。
-    - `LLM_MODEL`: 您希望使用的LLM模型名称。
-
-### 步骤 3: 放置知识库文件
-
-将您的层级化知识库文件 `combined_output.json` 放置在项目根目录的 `data/` 文件夹下。
-
-### 步骤 4: 构建并运行服务
-
-在项目根目录打开终端，依次执行以下命令。
-
-1.  **构建镜像**
-    此命令会根据 `Dockerfile` 创建服务镜像，安装所有Python依赖。
-    ```bash
-    docker-compose build
-    ```
-
-2.  **运行数据索引**
-    此命令会运行索引脚本，将您的知识库向量化并存入数据库。**此步骤仅在首次运行或知识库更新后需要执行。**
-    ```bash
-    docker-compose run --rm app python scripts/data_indexer.py
-    ```
-    您将看到日志输出，显示索引过程。
-
-3.  **启动API服务**
-    此命令会在后台启动主API服务。
-    ```bash
-    docker-compose up -d
-    ```
-
-### 步骤 5: 测试服务
-
-服务现在应该运行在 `http://localhost:21145` (或您在 `docker-compose.yml` 中配置的端口)。您可以使用任何HTTP客户端或Python脚本进行测试。
-
-**使用 `curl` 测试:**
 ```bash
 curl -N -X POST http://localhost:21145/v1/chat/completions \
--H "Content-Type: application/json" \
--d '{
-  "model": "Qwen3-32B",
-  "messages": [
-    {
-      "role": "user",
-      "content": "请介绍一下AIGC技术的核心概念"
-    }
-  ],
-  "stream": true
-}'
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "your-model-name",
+    "messages": [{"role": "user", "content": "请介绍一下AIGC技术"}],
+    "stream": true
+  }'
 ```
-> **注意**: 请将 `model` 的值替换为您在 `.env` 中配置的 `LLM_MODEL`。
 
-## 注意事项
+## 📋 系统要求
 
-1.  **URL协议**: 请务必确保 `.env` 文件中配置的服务地址 (`EMBEDDING_API_BASE_URL`, `LLM_API_BASE_URL`) 使用了**正确的协议** (`http` 或 `https`）。这取决于您的本地服务是否配置了SSL/TLS。这是常见的连接错误来源。
-2.  **数据持久化**: ChromaDB的数据库文件通过卷挂载持久化在本地的 `db/chromadb` 目录。只要不删除此目录，向量数据就不会丢失。
-3.  **更新代码**: 如果您修改了 `app/` 或 `scripts/` 目录下的Python代码，需要重新执行 `docker-compose build` 来应用更改，然后通过 `docker-compose up -d` 重启服务。
-4.  **查看日志**: 使用 `docker-compose logs -f app` 可以实时查看服务运行日志，便于调试。
-5.  **停止服务**: 使用 `docker-compose down` 可以停止并移除所有相关的容器和网络。
+- Docker & Docker Compose
+- Python 3.8+ (开发环境)
+- 本地LLM服务 (如 vLLM)
+- 本地Embedding服务
 
-## 版本更新记录
+## 🏗️ 架构设计
+
+```
+用户查询 → FastAPI → 检索服务 → Embedding & ChromaDB → 上下文提取 → LLM → 流式响应
+```
+
+### 核心组件
+
+- **FastAPI应用** - REST API服务
+- **ChromaDB** - 向量数据库
+- **检索服务** - 语义搜索与上下文提取
+- **LLM处理器** - 大语言模型接口
+
+## 📖 详细文档
+
+### 环境配置
+
+| 环境变量 | 描述 | 示例 |
+|---------|------|------|
+| `EMBEDDING_API_BASE_URL` | Embedding服务地址 | `http://localhost:8000` |
+| `EMBEDDING_MODEL` | Embedding模型名称 | `text-embedding-3-small` |
+| `LLM_API_BASE_URL` | LLM服务地址 | `http://localhost:8001` |
+| `LLM_MODEL` | LLM模型名称 | `Qwen3-32B` |
+
+### 知识库格式
+
+系统支持层级化JSON格式的知识库：
+
+```json
+{
+  "01": {
+    "name": "技术概述",
+    "content": "技术内容...",
+    "children": {
+      "01": {
+        "name": "子章节",
+        "content": "详细内容..."
+      }
+    }
+  }
+}
+```
+
+### API接口
+
+#### POST `/v1/chat/completions`
+
+OpenAI兼容的聊天完成接口，支持流式和非流式响应。
+
+**请求参数：**
+- `model` - 模型名称
+- `messages` - 消息数组
+- `stream` - 是否流式响应（可选）
+
+## 🔧 开发指南
+
+### 本地开发
+
+```bash
+# 克隆项目
+git clone https://github.com/oidahdsah0/JsonTreeRAG.git
+cd JsonTreeRAG
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动开发服务器
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 21145
+```
+
+### 项目结构
+
+```
+JsonTreeRAG/
+├── app/                    # FastAPI应用
+│   ├── main.py            # API入口
+│   ├── services/          # 业务逻辑
+│   └── core/              # 核心配置
+├── scripts/               # 工具脚本
+├── data/                  # 知识库数据
+├── docker-compose.yml     # Docker编排
+└── requirements.txt       # Python依赖
+```
+
+## 📈 版本历史
 
 ### v1.1.0 (2025-06-30) 🎉
 
-**重大Bug修复 - 多根节点支持和流式传输优化**
+- ✅ 修复多根节点路径查找Bug
+- ⭐ 改善流式传输效果
+- 🔧 增强缓存管理功能
+- 📝 添加详细调试日志
 
-本次更新解决了两个关键问题：
+### v1.0.0 (2025-06-01)
 
-#### 1. 多根节点路径查找Bug修复
-- **问题**: 当JSON知识库包含多个根节点树时，后续根节点（如"03"）的路径查找会失败
-- **修复**: 优化了 `find_node_by_path` 函数的路径遍历逻辑，将字符串比较改为索引比较
-- **影响**: 现在可以正确处理任意数量的根节点树结构
+- 🎯 首个正式版本发布
+- 🔌 OpenAI兼容API
+- 🐳 Docker容器化部署
+- 🌳 层级知识库支持
 
-#### 2. 流式传输效果意外改善 ⭐
-- **发现**: 修复多根节点bug的同时，意外解决了流式传输"大块输出"的问题
-- **原因**: 
-  1. **主要原因**: 原始代码在路径查找的最后有一个冗余的验证步骤，在某些情况下会导致验证失败
-  2. **潜在原因**: 缓存机制可能导致索引数据和查询数据不一致，加剧了验证失败的概率
-- **结果**: 
-  - **修复前**: 流式输出呈现"一大块一大块"的跳跃式效果，不够流畅
-  - **修复后**: 实现了真正的"一字一字"流式输出，用户体验大幅提升
+## 🤝 贡献指南
 
-#### 3. 缓存管理功能增强
-- **新增**: `clear_caches()` 函数，支持手动清除LRU缓存
-- **解决**: 索引数据和运行时数据不一致的问题
-- **预防**: 避免因缓存过期导致的路径查找失败
-- **新增**: `clear_caches()` 函数，支持手动清除LRU缓存
-- **新增**: 详细的路径查找调试日志，便于问题排查
-- **改进**: 更精确的错误信息和层级定位
+我们欢迎各种形式的贡献！
 
-#### 技术细节
+1. Fork 项目
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
 
-**问题根源分析**:
-```python
-# 原始版本 - 有bug的验证逻辑
-if found_node and found_node.get('name') == path_parts[-1]:
-    return found_node
-else:
-    logging.error(f"路径解析逻辑出现意外错误")
-    return None  # 这里导致上下文丢失!
+## 📝 许可证
 
-# 修复版本 - 直接返回结果
-if found_node:
-    logging.debug(f"成功找到目标节点: '{found_node.get('name')}'")
-return found_node  # 简洁且可靠
-```
+本项目基于 MIT 许可证开源 - 查看 [LICENSE](LICENSE) 文件了解详情。
 
-**连锁反应**: 路径查找失败 → 上下文为空 → LLM收到空提示 → 非流式响应模式
+## 🌟 致谢
 
-这次修复证明了代码简洁性的重要性 - 有时候删除"看似安全"的验证代码反而能解决意想不到的问题！
+- [FastAPI](https://fastapi.tiangolo.com/) - 现代、快速的Web框架
+- [ChromaDB](https://www.trychroma.com/) - 向量数据库
+- [OpenAI](https://openai.com/) - API标准参考
+
+## 📞 联系方式
+
+- GitHub: [@oidahdsah0](https://github.com/oidahdsah0)
+- Issues: [GitHub Issues](https://github.com/oidahdsah0/JsonTreeRAG/issues)
 
 ---
+
+# English Version
+
+## JsonTreeRAG 🌳
+
+> 🚀 **A Private Knowledge Base RAG Q&A System Based on Hierarchical JSON Structure**
+
+A retrieval-augmented generation system designed for hierarchical JSON knowledge bases, providing precise context extraction through vectorized retrieval and tree-based context building for local Large Language Models.
+
+## ✨ Key Features
+
+🔒 **Private Deployment** - All components can be deployed locally for data security  
+🌳 **Hierarchical Knowledge Base** - Optimized for tree-structured JSON with precise path positioning  
+🔌 **OpenAI Compatible** - Standard API interface with streaming support  
+🐳 **Containerized Deployment** - One-click Docker deployment  
+⚙️ **Highly Configurable** - Flexible configuration management supporting various LLM services  
+
+## 🚀 Quick Start
+
+### One-Click Launch
+
+```bash
+# 1. Clone the project
+git clone https://github.com/oidahdsah0/JsonTreeRAG.git
+cd JsonTreeRAG
+
+# 2. Configure environment variables
+cp .env.example .env
+# Edit .env file to configure your API endpoints and keys
+
+# 3. Start services
+docker-compose up -d
+
+# 4. Index knowledge base
+docker-compose run --rm app python scripts/data_indexer.py
+```
+
+### Test API
+
+```bash
+curl -N -X POST http://localhost:21145/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "your-model-name",
+    "messages": [{"role": "user", "content": "Tell me about AIGC technology"}],
+    "stream": true
+  }'
+```
+
+## 📋 System Requirements
+
+- Docker & Docker Compose
+- Python 3.8+ (development environment)
+- Local LLM service (e.g., vLLM)
+- Local Embedding service
+
+## 🏗️ Architecture
+
+```
+User Query → FastAPI → Retrieval Service → Embedding & ChromaDB → Context Extraction → LLM → Streaming Response
+```
+
+### Core Components
+
+- **FastAPI Application** - REST API service
+- **ChromaDB** - Vector database
+- **Retrieval Service** - Semantic search and context extraction
+- **LLM Handler** - Large Language Model interface
+
+## 📖 Documentation
+
+### Environment Configuration
+
+| Environment Variable | Description | Example |
+|---------------------|-------------|---------|
+| `EMBEDDING_API_BASE_URL` | Embedding service URL | `http://localhost:8000` |
+| `EMBEDDING_MODEL` | Embedding model name | `text-embedding-3-small` |
+| `LLM_API_BASE_URL` | LLM service URL | `http://localhost:8001` |
+| `LLM_MODEL` | LLM model name | `Qwen3-32B` |
+
+### Knowledge Base Format
+
+The system supports hierarchical JSON knowledge bases:
+
+```json
+{
+  "01": {
+    "name": "Technical Overview",
+    "content": "Technical content...",
+    "children": {
+      "01": {
+        "name": "Sub-section",
+        "content": "Detailed content..."
+      }
+    }
+  }
+}
+```
+
+### API Interface
+
+#### POST `/v1/chat/completions`
+
+OpenAI-compatible chat completion interface supporting both streaming and non-streaming responses.
+
+**Request Parameters:**
+- `model` - Model name
+- `messages` - Message array
+- `stream` - Whether to use streaming response (optional)
+
+## 🔧 Development Guide
+
+### Local Development
+
+```bash
+# Clone the project
+git clone https://github.com/oidahdsah0/JsonTreeRAG.git
+cd JsonTreeRAG
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start development server
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 21145
+```
+
+### Project Structure
+
+```
+JsonTreeRAG/
+├── app/                    # FastAPI application
+│   ├── main.py            # API entry point
+│   ├── services/          # Business logic
+│   └── core/              # Core configuration
+├── scripts/               # Utility scripts
+├── data/                  # Knowledge base data
+├── docker-compose.yml     # Docker orchestration
+└── requirements.txt       # Python dependencies
+```
+
+## 📈 Version History
+
+### v1.1.0 (2025-06-30) 🎉
+
+- ✅ Fixed multi-root node path finding bug
+- ⭐ Improved streaming transmission effect
+- 🔧 Enhanced cache management functionality
+- 📝 Added detailed debug logging
+
+### v1.0.0 (2025-06-01)
+
+- 🎯 First official release
+- 🔌 OpenAI-compatible API
+- 🐳 Docker containerized deployment
+- 🌳 Hierarchical knowledge base support
+
+## 🤝 Contributing
+
+We welcome all forms of contributions!
+
+1. Fork the project
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🌟 Acknowledgments
+
+- [FastAPI](https://fastapi.tiangolo.com/) - Modern, fast web framework
+- [ChromaDB](https://www.trychroma.com/) - Vector database
+- [OpenAI](https://openai.com/) - API standard reference
+
+## 📞 Contact
+
+- GitHub: [@oidahdsah0](https://github.com/oidahdsah0)
+- Issues: [GitHub Issues](https://github.com/oidahdsah0/JsonTreeRAG/issues)
+
+---
+
+⭐ **如果这个项目对你有帮助，请给我们一个星标！**  
+⭐ **If this project helps you, please give us a star!**
