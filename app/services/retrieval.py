@@ -70,6 +70,7 @@ def search_knowledge_base(query_vector: list[float]):
 def find_node_by_path(path_id: str):
     """
     根据路径ID在JSON知识库中查找并返回对应的节点。
+    此函数现在适配根为列表，子节点键为'child'且值为列表的结构。
 
     Args:
         path_id (str): 形如 'A>B>C' 的路径ID。
@@ -79,33 +80,29 @@ def find_node_by_path(path_id: str):
     """
     logging.debug(f"开始查找路径: {path_id}")
     path_parts = path_id.split('>')
+    # 知识库的根是一个列表
     current_level = get_knowledge_base()
-    found_node = None
-    
-    # 添加调试信息：根节点情况
-    root_names = [node.get('name', 'Unknown') for node in current_level]
-    logging.debug(f"根节点列表: {root_names}")
     
     for i, part in enumerate(path_parts):
         found_node = None
-        logging.debug(f"查找第{i+1}层节点: '{part}', 当前层级有{len(current_level)}个节点")
-        
-        # 在当前层级的节点中查找匹配的name
-        current_names = [node.get('name', 'Unknown') for node in current_level]
-        logging.debug(f"第{i+1}层节点名称列表: {current_names}")
-        
+        # 确保 current_level 是一个列表
+        if not isinstance(current_level, list):
+            logging.warning(f"路径 '{path_id}' 在第{i}层 '{part}' 中断，因为当前层级不是一个列表。")
+            return None
+
+        # 迭代列表中的每个节点（字典）
         for node in current_level:
             if node.get('name') == part:
                 found_node = node
                 logging.debug(f"找到匹配节点: '{part}'")
-                # 如果不是最后一个部分，就进入下一层child
+                # 子节点在 'child' 键下，并且是列表
                 if i < len(path_parts) - 1:
                     current_level = node.get('child', [])
-                    logging.debug(f"进入下一层，子节点数量: {len(current_level)}")
                 break
         
         if found_node is None:
-            logging.warning(f"路径 '{path_id}' 在第{i+1}层 '{part}' 部分中断，未找到节点。当前层级节点: {current_names}")
+            current_level_names = [n.get('name', 'Unknown') for n in current_level if isinstance(n, dict)]
+            logging.warning(f"路径 '{path_id}' 在第{i+1}层 '{part}' 部分中断，未找到节点。当前层级可用节点: {current_level_names}")
             return None
             
     # 循环结束后，found_node 应该是目标节点
