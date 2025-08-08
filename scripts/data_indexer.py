@@ -177,6 +177,30 @@ def main():
         return
     logging.info("Embeddings生成成功。")
 
+    # 4.1 过滤无效的向量，保持与文档/元数据/ID一一对应
+    original_len = len(documents)
+    if len(embeddings) != original_len:
+        logging.warning(
+            f"Embedding 数量({len(embeddings)})与文档数量({original_len})不一致，将按就地对齐并过滤无效项。"
+        )
+    filtered = [
+        (e, d, m, i)
+        for e, d, m, i in zip(embeddings, documents, metadatas, ids)
+        if e is not None
+    ]
+    if not filtered:
+        logging.error("所有向量均无效，无法写入 ChromaDB。")
+        return
+    embeddings, documents, metadatas, ids = (
+        [x[0] for x in filtered],
+        [x[1] for x in filtered],
+        [x[2] for x in filtered],
+        [x[3] for x in filtered],
+    )
+    dropped_count = original_len - len(filtered)
+    if dropped_count:
+        logging.warning(f"因无效向量被丢弃的条目数: {dropped_count}")
+
     # 5. 存入ChromaDB
     try:
         logging.info("正在将数据批量存入ChromaDB...")
