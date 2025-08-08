@@ -1,5 +1,6 @@
 # 环境变量文件
 .env
+.conda
 
 # Python 相关
 __pycache__/

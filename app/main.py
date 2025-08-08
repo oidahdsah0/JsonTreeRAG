@@ -5,7 +5,8 @@ from pydantic import BaseModel, Field
 import logging
 import uuid
 import time
-from typing import Literal
+from typing import Literal, Optional, List
+import asyncio
 
 from app.services.retrieval import get_context_from_retrieval
 from app.services.llm_handler import build_prompt, get_llm_stream
@@ -27,25 +28,25 @@ class ChatMessage(BaseModel):
     content: str
 
 class ChatCompletionRequest(BaseModel):
-    model: str
-    messages: list[ChatMessage]
+    model: Optional[str] = None
+    messages: List[ChatMessage]
     stream: bool = Field(default=False, description="是否以流式方式返回响应")
     # 可以根据需要添加其他OpenAI参数，如 temperature, max_tokens 等
 
 class Delta(BaseModel):
-    content: str | None = None
+    content: Optional[str] = None
 
 class ChoiceDelta(BaseModel):
     delta: Delta
     index: int = 0
-    finish_reason: str | None = None
+    finish_reason: Optional[str] = None
 
 class StreamingChatCompletion(BaseModel):
     id: str = Field(default_factory=lambda: f"chatcmpl-{uuid.uuid4().hex}")
     object: str = "chat.completion.chunk"
     created: int = Field(default_factory=lambda: int(time.time()))
     model: str
-    choices: list[ChoiceDelta]
+    choices: List[ChoiceDelta]
 
 
 @app.get("/")
@@ -59,7 +60,7 @@ async def stream_generator(retrieved_path, retrieved_subtree, user_question, mod
     logging.info(f"构建的提示: \n{prompt}")
     
     # 2. 获取LLM流
-    llm_response_stream = get_llm_stream(prompt)
+    llm_response_stream = get_llm_stream(prompt, model=model_name)
     
     # 3. 迭代流并yield OpenAI兼容的数据块
     async for chunk in llm_response_stream:
@@ -68,14 +69,17 @@ async def stream_generator(retrieved_path, retrieved_subtree, user_question, mod
                 model=model_name,
                 choices=[ChoiceDelta(delta=Delta(content=chunk))]
             )
-            yield f"data: {response_chunk.model_dump_json()}\n\n"
+            # 兼容 pydantic v1/v2 的 JSON 序列化（优先使用 v2 的 model_dump_json）
+            json_str = response_chunk.model_dump_json() if hasattr(response_chunk, 'model_dump_json') else response_chunk.json()
+            yield f"data: {json_str}\n\n"
     
     # 4. 发送带有 finish_reason 的最后一个数据块
     final_chunk = StreamingChatCompletion(
         model=model_name,
         choices=[ChoiceDelta(delta=Delta(), finish_reason="stop")]
     )
-    yield f"data: {final_chunk.model_dump_json()}\n\n"
+    json_str = final_chunk.model_dump_json() if hasattr(final_chunk, 'model_dump_json') else final_chunk.json()
+    yield f"data: {json_str}\n\n"
     
     # 5. 发送流结束标志
     yield "data: [DONE]\n\n"
@@ -97,34 +101,42 @@ async def chat_completions(request: ChatCompletionRequest):
         
     logging.info(f"收到问题: {user_question}")
 
-    # 1. 检索上下文
-    retrieved_path, retrieved_subtree = get_context_from_retrieval(user_question)
+    # 1. 确定模型名（请求优先，否则使用默认配置）
+    model_name = request.model or config.LLM_MODEL
 
-    # 2. 如果没有找到上下文，返回特定的流式消息
+    # 2. 检索上下文（在线程池中运行以避免阻塞事件循环）
+    loop = asyncio.get_running_loop()
+    retrieved_path, retrieved_subtree = await loop.run_in_executor(
+        None, lambda: get_context_from_retrieval(user_question)
+    )
+
+    # 3. 如果没有找到上下文，返回特定的流式消息
     if not retrieved_path or not retrieved_subtree:
         logging.warning("未能从知识库中检索到相关上下文。")
         async def not_found_stream():
             error_message = "抱歉，我无法在知识库中找到与您问题相关的信息。请尝试换一种问法。"
             # 发送错误消息块
             response_chunk = StreamingChatCompletion(
-                model=request.model,
+                model=model_name,
                 choices=[ChoiceDelta(delta=Delta(content=error_message))]
             )
-            yield f"data: {response_chunk.model_dump_json()}\n\n"
+            json_str = response_chunk.model_dump_json() if hasattr(response_chunk, 'model_dump_json') else response_chunk.json()
+            yield f"data: {json_str}\n\n"
             # 发送结束块
             final_chunk = StreamingChatCompletion(
-                model=request.model,
+                model=model_name,
                 choices=[ChoiceDelta(delta=Delta(), finish_reason="stop")]
             )
-            yield f"data: {final_chunk.model_dump_json()}\n\n"
+            json_str = final_chunk.model_dump_json() if hasattr(final_chunk, 'model_dump_json') else final_chunk.json()
+            yield f"data: {json_str}\n\n"
             yield "data: [DONE]\n\n"
         return StreamingResponse(not_found_stream(), media_type="text/event-stream")
 
     logging.info(f"成功检索到上下文路径: {retrieved_path}")
 
-    # 3. 创建并返回流式响应
+    # 4. 创建并返回流式响应
     return StreamingResponse(
-        stream_generator(retrieved_path, retrieved_subtree, user_question, request.model),
+        stream_generator(retrieved_path, retrieved_subtree, user_question, model_name),
         media_type="text/event-stream"
     )
 

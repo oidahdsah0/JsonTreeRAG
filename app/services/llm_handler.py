@@ -49,7 +49,9 @@ def build_prompt(retrieved_path: str, retrieved_subtree: dict, user_question: st
     )
     return prompt
 
-async def get_llm_stream(prompt: str):
+from typing import Optional
+
+async def get_llm_stream(prompt: str, model: Optional[str] = None):
     """
     调用LLM并以流式方式返回响应。
 
@@ -59,7 +61,7 @@ async def get_llm_stream(prompt: str):
     client = get_llm_client()
     try:
         stream = await client.chat.completions.create(
-            model=config.LLM_MODEL,
+            model=model or config.LLM_MODEL,
             messages=[{"role": "system", "content": prompt}],
             stream=True,
             temperature=0.7, # 可以根据需要调整

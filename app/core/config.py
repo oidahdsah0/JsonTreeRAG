@@ -20,6 +20,14 @@ DB_DIR = BASE_DIR / "db"
 KNOWLEDGE_BASE_FILE = DATA_DIR / "combined_output.json"
 CHROMADB_PATH = DB_DIR / "chromadb"
 
+# 确保必要目录存在
+for directory in [DATA_DIR, DB_DIR, CHROMADB_PATH]:
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        # 在只读环境或权限受限环境下忽略
+        pass
+
 # --- ChromaDB 配置 ---
 CHROMA_COLLECTION_NAME = "knowledge_base"
 
@@ -36,4 +44,4 @@ LLM_API_KEY = os.getenv("LLM_API_KEY", "dummy-key") # 提供一个默认值
 LLM_MODEL = os.getenv("LLM_MODEL", "Qwen1.5-14B-Chat")
 
 # --- RAG 配置 ---
-TOP_K_RESULTS = 3
+TOP_K_RESULTS = int(os.getenv("TOP_K_RESULTS", "3"))

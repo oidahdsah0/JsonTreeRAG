@@ -3,6 +3,7 @@ import chromadb
 from openai import OpenAI
 from functools import lru_cache
 import logging
+from typing import List
 
 from app.core import config
 
@@ -27,15 +28,28 @@ def get_embedding_client():
 
 @lru_cache(maxsize=1)
 def get_chroma_collection():
-    """初始化并返回ChromaDB集合（带缓存）。"""
+    """初始化并返回ChromaDB集合（带缓存）。若不存在则创建。"""
     client = chromadb.PersistentClient(path=str(config.CHROMADB_PATH))
-    return client.get_collection(name=config.CHROMA_COLLECTION_NAME)
+    return client.get_or_create_collection(
+        name=config.CHROMA_COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"}
+    )
 
 @lru_cache(maxsize=1)
 def get_knowledge_base():
     """加载并缓存JSON知识库文件。"""
-    with open(config.KNOWLEDGE_BASE_FILE, 'r', encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(config.KNOWLEDGE_BASE_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if not isinstance(data, list):
+                logging.error(f"知识库根节点期望为列表，但得到: {type(data).__name__}")
+            return data
+    except FileNotFoundError:
+        logging.error(f"知识库文件未找到: {config.KNOWLEDGE_BASE_FILE}")
+        return []
+    except Exception as e:
+        logging.error(f"加载知识库失败: {e}", exc_info=True)
+        return []
 
 # --- 检索功能 ---
 
@@ -47,18 +61,24 @@ def embed_query(query_text: str):
             input=[query_text],
             model=config.EMBEDDING_MODEL
         )
-        return response.data[0].embedding
+        # 兼容不同 OpenAI 客户端返回结构
+        embedding_item = response.data[0]
+        vector = getattr(embedding_item, 'embedding', None)
+        if vector is None and isinstance(embedding_item, dict):
+            vector = embedding_item.get('embedding')
+        return vector
     except Exception as e:
         logging.error(f"查询向量化失败: {e}")
         return None
 
-def search_knowledge_base(query_vector: list[float]):
+def search_knowledge_base(query_vector: List[float]):
     """在ChromaDB中执行相似度搜索。"""
     collection = get_chroma_collection()
     try:
         results = collection.query(
             query_embeddings=[query_vector],
-            n_results=config.TOP_K_RESULTS
+            n_results=config.TOP_K_RESULTS,
+            include=["ids", "documents", "metadatas", "distances"]
         )
         return results
     except Exception as e:
@@ -130,12 +150,14 @@ def get_context_from_retrieval(query: str):
     search_results = search_knowledge_base(query_vector)
 
     # --- 增强的命中日志 ---
-    if search_results and search_results.get('ids') and search_results['ids'][0]:
+    if search_results and search_results.get('ids') and search_results['ids'] and search_results['ids'][0]:
         # 使用json.dumps美化输出，方便阅读
+        distances = search_results.get('distances', [[]])[0]
+        documents = search_results.get('documents', [[]])[0]
         pretty_results = {
             "ids": search_results['ids'][0],
-            "distances": [round(d, 4) for d in search_results['distances'][0]],
-            "documents": [doc.replace('\n', ' ') for doc in search_results['documents'][0]]
+            "distances": [round(d, 4) for d in distances] if distances else [],
+            "documents": [doc.replace('\n', ' ') for doc in documents] if documents else []
         }
         logging.info(f"知识库命中! 查询: '{query}'. 检索结果: {json.dumps(pretty_results, ensure_ascii=False, indent=2)}")
     else:

@@ -76,18 +76,30 @@ def traverse_and_prepare_data(data):
     metadatas = []
     
     def _traverse(nodes, path_parts):
+        if not isinstance(nodes, list):
+            logging.warning(f"期望节点列表，但得到: {type(nodes).__name__}")
+            return
         for node in nodes:
-            current_path_parts = path_parts + [node['name']]
+            if not isinstance(node, dict):
+                logging.warning("跳过非字典节点")
+                continue
+            name = node.get('name')
+            if not name:
+                logging.warning("跳过缺少 'name' 的节点")
+                continue
+            current_path_parts = path_parts + [name]
             path_id = '>'.join(current_path_parts)
             
             # 组合 name 和 desc 作为索引内容
-            content = f"{node['name']}\n{node['desc']}".strip()
+            desc = node.get('desc', '')
+            content = f"{name}\n{desc}".strip()
             
             documents.append(content)
             metadatas.append({'path_id': path_id})
             
-            if 'child' in node and node['child']:
-                _traverse(node['child'], current_path_parts)
+            children = node.get('child')
+            if isinstance(children, list) and children:
+                _traverse(children, current_path_parts)
 
     _traverse(data, [])
     
@@ -110,7 +122,13 @@ def embed_documents(documents, openai_client):
         )
         
         logging.info(f"[Embedding] Received {len(response.data)} embedding(s).")
-        return [item.embedding for item in response.data]
+        embeddings = []
+        for item in response.data:
+            vector = getattr(item, 'embedding', None)
+            if vector is None and isinstance(item, dict):
+                vector = item.get('embedding')
+            embeddings.append(vector)
+        return embeddings
     
     except Exception as e:
         logging.error(f"[Embedding] An error occurred: {e}", exc_info=True)
